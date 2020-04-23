@@ -1,0 +1,4 @@
+tensorflow==1.15.2
+nltk==3.4.5
+numpy==1.16.1
+gensim==3.8.2
