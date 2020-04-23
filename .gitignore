@@ -151,4 +151,4 @@ dmypy.json
 cython_debug/
 
 # Data related ignores
-data/*.
+data/*
