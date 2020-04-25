@@ -16,5 +16,6 @@
         3.2 Evaluting the optimal number of clusters
     4. Predicting
         4.1 Finding the most similar text
+        4.2 Generating Heatmap for Text Similarities
     5. Bibliography
     
