@@ -14,3 +14,12 @@
     similarities using Jensen-Shannon Distance
 
 ## Summary
+
+    1. Loading data
+    2. Treating Data
+    3. Generating LDA Component Analysis
+        3.1 Generating Topics
+    4. Similarity Jensen-Shannon
+        4.1 Creating Topics Similarities Pairs
+        4.2 Generating Heatmap for Text Similarities
+    5. Bibliography
