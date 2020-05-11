@@ -12,4 +12,8 @@
     3. Clustiring with k-means
         3.1 Finding the optimal number of clusters
         3.2 Evaluting the optimal number of clusters
-    4. Bibliography
+    4. Evaluation
+        4.1 Time Consumed
+        4.2 Similarities Surface
+        4.3 Using Similarities To Classify
+    5. Bibliography
