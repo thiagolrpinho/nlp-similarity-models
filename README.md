@@ -18,4 +18,8 @@
         2.1 Creating Text Pairs
     3. Jaccard Text Similarity 
         3.1 Generating Heatmap for Text Similarities
-    4. Bibliography
+    4. Evaluation
+        4.1 Time Consumed
+        4.2 Similarities Surface
+        4.3 Using Similarities To Classify
+    5. Bibliography
