@@ -20,9 +20,10 @@
     3. Generating LDA Component Analysis
         3.1 Finding Optimal Number of Components
         3.2 Generating Topics
-    4. Similarity Jensen-Shannon
-        4.1 Creating Topics Similarities Pairs
-        4.2 Generating Heatmap for Text Similarities
+    4. Evaluation
+        4.1 Time Consumed
+        4.2 Similarities Surface
+        4.3 Using Similarities To Classify
     5. Bibliography
 
 
