@@ -69,7 +69,7 @@ class JaccardSimilarityFlow(FlowSpec):
 
         # Load the data set into a pandas dataframe.
         self.dataframe = pd.read_parquet(self.preprocessed_documents_data,
-            columns=['text', 'process_id'])
+            columns=['text', 'doc_id', 'process_class'])
 
         self.next(self.sampling)
 
@@ -81,7 +81,8 @@ class JaccardSimilarityFlow(FlowSpec):
         """
         num_samples = 100
         sample_df = self.dataframe.sample(n=num_samples)
-        self.sample_dataframe = sample_df.drop_duplicates(subset='process_id')
+        self.number_of_classes = sample_df['process_class'].nunique()
+        self.sample_dataframe = sample_df.drop_duplicates(subset='doc_id')
         self.next(self.creating_text_pairs)
 
     @step
@@ -96,22 +97,30 @@ class JaccardSimilarityFlow(FlowSpec):
         comparing_same_text = True
         for question_1_index, question_1_row in self.sample_dataframe.iterrows():
             question_1_text = question_1_row['text']
-            question_1_id = question_1_row['process_id']
+            question_1_id = question_1_row['doc_id']
+            question_1_class = question_1_row['process_class']
             for question_2_index, question_2_row in self.sample_dataframe.iterrows():
-                is_same_index = question_1_index == question_2_index
-                if not comparing_same_text and is_same_index:
+                if not comparing_same_text and question_1_index == question_2_index:
                     continue
                 question_2_text = question_2_row['text']
-                question_2_id = question_2_row['process_id']
+                question_2_id = question_2_row['doc_id']
+                question_2_class = question_2_row['process_class']
+                is_same_class = question_1_class == question_2_class
                 text_pairs.append([
                     question_1_id,
                     question_1_text,
                     question_2_id,
-                    question_2_text])
+                    question_2_text,
+                    is_same_class])
 
         self.pair_text_df = pd.DataFrame(
             text_pairs,
-            columns=['question1_id', 'question1', 'question2_id', 'question2'])
+            columns=[
+                'question1_id',
+                'question1',
+                'question2_id',
+                'question2',
+                'is_duplicate'])
 
         self.next(self.caculating_similarities)
 
@@ -122,39 +131,45 @@ class JaccardSimilarityFlow(FlowSpec):
         for better visualisation.
         """
         import pandas as pd
-
-        unique_ids = self.pair_text_df['question1_id'].unique()
+        pair_text_df = self.pair_text_df
+        unique_ids = pair_text_df['question1_id'].unique()
         unique_ids_list = unique_ids.tolist()
 
         unique_ids_list.sort()
-
         distances_mapped = dict()
+        predicitions_mapped = dict()
         for choosen_id in unique_ids_list:
-            pair_text_ids = self.pair_text_df['question1_id'].values
-            choosen_question_mask = pair_text_ids == choosen_id
-            compared_df = self.pair_text_df[choosen_question_mask]
-
+            choosen_question_mask = pair_text_df['question1_id'].values == choosen_id
+            compared_df = pair_text_df[choosen_question_mask]
+            
             compared_df.sort_values(by=['question2_id'], inplace=True)
-
+            
             compared_ids_list = compared_df['question2_id'].to_list()
             if compared_ids_list != unique_ids_list:
                 print("An error ocurred")
                 break
-
+            
+            threshold = 1/self.number_of_classes
             predictions_list = []
-            for _, pair_text_row in compared_df.iterrows():
+            predictions_same_class_list = []
+            for pair_text_index, pair_text_row in compared_df.iterrows():
                 row_distance = calculate_jaccard_similarity(
                     pair_text_row['question1'], pair_text_row['question2'])
+                same_class_prediction = row_distance > threshold
                 predictions_list.append(row_distance)
+                predictions_same_class_list.append(
+                    (same_class_prediction, pair_text_row['is_duplicate']))
             distances_mapped[choosen_id] = predictions_list
+            predicitions_mapped[choosen_id] = predictions_same_class_list
 
         mapped_distances_df = pd.DataFrame.from_dict(
             distances_mapped, orient='index', columns=unique_ids_list)
+        self.mapped_distances_df = mapped_distances_df[
+            mapped_distances_df.index]
 
-        first_question_id = unique_ids_list[0]
-        mapped_distances_df.sort_values(
-            by=[first_question_id], ascending=False, inplace=True)
-        self.mapped_distances_df = mapped_distances_df[mapped_distances_df.index]
+        self.mapped_predictions_df = pd.DataFrame.from_dict(
+            predicitions_mapped, orient='index', columns=unique_ids_list)
+
         self.next(self.end)
 
     @step
