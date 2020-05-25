@@ -66,7 +66,8 @@ class JaccardSimilarityFlow(FlowSpec):
         """
         import pandas as pd
         from io import StringIO
-
+        from datetime import datetime
+        self.start_time = datetime.now()
         # Load the data set into a pandas dataframe.
         self.dataframe = pd.read_parquet(self.preprocessed_documents_data,
             columns=['text', 'doc_id', 'process_class'])
@@ -121,7 +122,6 @@ class JaccardSimilarityFlow(FlowSpec):
                 'question2_id',
                 'question2',
                 'is_duplicate'])
-
         self.next(self.caculating_similarities)
 
     @step
@@ -141,14 +141,14 @@ class JaccardSimilarityFlow(FlowSpec):
         for choosen_id in unique_ids_list:
             choosen_question_mask = pair_text_df['question1_id'].values == choosen_id
             compared_df = pair_text_df[choosen_question_mask]
-            
+
             compared_df.sort_values(by=['question2_id'], inplace=True)
-            
+
             compared_ids_list = compared_df['question2_id'].to_list()
             if compared_ids_list != unique_ids_list:
                 print("An error ocurred")
                 break
-            
+
             threshold = 1/self.number_of_classes
             predictions_list = []
             predictions_same_class_list = []
@@ -169,7 +169,6 @@ class JaccardSimilarityFlow(FlowSpec):
 
         self.mapped_predictions_df = pd.DataFrame.from_dict(
             predicitions_mapped, orient='index', columns=unique_ids_list)
-
         self.next(self.end)
 
     @step
@@ -179,6 +178,10 @@ class JaccardSimilarityFlow(FlowSpec):
         Output data available on
             mapped_distances_df
         """
+        from datetime import datetime
+        
+        self.end_time = datetime.now()
+        self.total_time = self.end_time - self.start_time
         pass
 
 
