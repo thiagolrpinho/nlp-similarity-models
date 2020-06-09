@@ -78,6 +78,11 @@ class LDAJensenShannonFlow(FlowSpec):
         help="The path to preporcessed documents file.",
         default=join_relative_folder_path('data_preprocessed.parquet.gzip'))
 
+    evaluated_metrics_data = Parameter(
+        "evaluated_metrics_data",
+        help="The path to evaluated pair documents file.",
+        default=join_relative_folder_path('evaluated_metrics.parquet.gzip'))
+
     num_samples = Parameter(
         "num_samples",
         help="""How many sample are used in the run. Default is 100""",
@@ -270,6 +275,47 @@ class LDAJensenShannonFlow(FlowSpec):
         self.mapped_distances_df = mapped_distances_df[
             mapped_distances_df.index]
         self.mapped_predictions_df = mapped_predictions_df
+        self.next(self.scoring)
+
+    @step
+    def scoring(self):
+        """
+            Scoring the model based files classified by a lawn team
+            and also using aproximated classifications based on their
+            class
+        """
+        mapped_predictions_df = self.mapped_predictions_df
+        predictions_matrix = mapped_predictions_df.to_numpy()
+
+        true_positive = 0
+        true_negative = 0
+        false_positive = 0
+        false_negative = 0
+        count = 0
+        for i in range(1, len(predictions_matrix)):
+            for j in range(i, len(predictions_matrix)):
+                count += 1
+                similarity_prediction, true_class = predictions_matrix[i][j]
+                if similarity_prediction == true_class:
+                    if similarity_prediction:
+                        true_positive += 1
+                    else:
+                        true_negative += 1
+                else:
+                    if similarity_prediction:
+                        false_positive += 1
+                    else:
+                        false_negative += 1
+
+        self.accuracy = (true_positive + true_negative)/(
+            true_positive + false_positive + true_negative + false_positive)
+        precision = true_positive/(true_positive + false_positive)
+        recall = true_positive/(true_positive + false_negative)
+
+        self.precision = precision
+        self.recall = recall
+        self.f1_score = 2*(recall * precision)/(recall+precision)
+
         self.next(self.end)
 
     @step
