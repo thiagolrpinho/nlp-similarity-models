@@ -101,12 +101,43 @@ class LDAJensenShannonFlow(FlowSpec):
         # Load the data set into a pandas dataframe.
         ailab_df = pd.read_parquet(
             self.preprocessed_documents_data,
-            columns=['text', 'doc_id', 'process_class'])
-        num_samples = self.num_samples
-        filename = "data_preprocessed"
+            columns=['doc_id', 'text', 'process_class'])
 
+        evaluted_pairs_df = pd.read_parquet(
+            self.evaluated_metrics_data,
+            columns=["doc_id_1", "doc_id_2", "is_similarity"])
+
+        # Lets prioritize the documents already scored
+        evaluted_docs_ids = []
+        used_docs = set()
+        for _, evaluted_pairs_row in evaluted_pairs_df.iterrows():
+            doc_id_1 = evaluted_pairs_row['doc_id_1']
+            doc_id_2 = evaluted_pairs_row['doc_id_2']
+
+            # Let's make a unique id list without losing it's order
+            if doc_id_1 not in used_docs:
+                evaluted_docs_ids.append(doc_id_1)
+                used_docs.add(doc_id_1)
+
+            if doc_id_2 not in used_docs:
+                evaluted_docs_ids.append(doc_id_2)
+                used_docs.add(doc_id_2)
+
+        num_samples = self.num_samples
+        num_evaluated_docs = len(evaluted_docs_ids)
         ailab_df = ailab_df.drop_duplicates(subset='doc_id')
-        ailab_df = ailab_df.head(num_samples)
+        evaluated_docs_mask = ailab_df['doc_id'].isin(evaluted_docs_ids)
+        print(num_samples, num_evaluated_docs)
+        if num_samples <= num_evaluated_docs:
+            ailab_df = ailab_df[evaluated_docs_mask]
+            ailab_df = ailab_df.head(num_samples)
+        else:
+            evaluated_ailab_df = ailab_df[evaluated_docs_mask]
+            non_evaluated_ailab_df = ailab_df[~evaluated_docs_mask]
+            non_evaluated_ailab_df = non_evaluated_ailab_df.head(
+                num_samples - num_evaluated_docs)
+            ailab_df = evaluated_ailab_df.append(non_evaluated_ailab_df)
+
         number_of_classes = ailab_df['process_class'].nunique()
 
         self.ailab_df = ailab_df
