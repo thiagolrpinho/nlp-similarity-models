@@ -57,6 +57,21 @@ def compute_coherence_values(dictionary, corpus, texts, limit, start=2):
     return model_list, coherence_values
 
 
+def evalute_similarity(doc_1_topics, doc_2_topics, threshold):
+    """ 
+        Return how similar two topics array are based on a threshold
+    """
+    from scipy.spatial.distance import jensenshannon
+
+    same_class_prediction = False
+
+    topics_distance = jensenshannon(doc_1_topics, doc_2_topics)
+
+    if topics_distance < threshold:
+        same_class_prediction = True
+
+    return same_class_prediction
+
 class LDAJensenShannonFlow(FlowSpec):
     """
     Use an LDA components analysis for text documents and then evaluate their
@@ -105,7 +120,7 @@ class LDAJensenShannonFlow(FlowSpec):
 
         evaluted_pairs_df = pd.read_parquet(
             self.evaluated_metrics_data,
-            columns=["doc_id_1", "doc_id_2", "is_similarity"])
+            columns=["doc_id_1", "doc_id_2", "is_similar"])
 
         # Lets prioritize the documents already scored
         evaluted_docs_ids = []
@@ -127,7 +142,6 @@ class LDAJensenShannonFlow(FlowSpec):
         num_evaluated_docs = len(evaluted_docs_ids)
         ailab_df = ailab_df.drop_duplicates(subset='doc_id')
         evaluated_docs_mask = ailab_df['doc_id'].isin(evaluted_docs_ids)
-        print(num_samples, num_evaluated_docs)
         if num_samples <= num_evaluated_docs:
             ailab_df = ailab_df[evaluated_docs_mask]
             ailab_df = ailab_df.head(num_samples)
@@ -140,6 +154,7 @@ class LDAJensenShannonFlow(FlowSpec):
 
         number_of_classes = ailab_df['process_class'].nunique()
 
+        self.evaluted_pairs_df = evaluted_pairs_df
         self.ailab_df = ailab_df
         self.number_of_classes = number_of_classes
         self.next(self.selecting_number_components)
@@ -260,14 +275,12 @@ class LDAJensenShannonFlow(FlowSpec):
         import pandas as pd
 
         pair_text_df = self.pair_text_df
-        number_of_classes = self.number_of_classes
 
         unique_ids_list = pair_text_df['question1_id'].unique().tolist()
         unique_ids_list.sort()
 
         dimension = len(unique_ids_list)
         distances_mapped = dict()
-        predicitions_mapped = dict()
         for choosen_id in unique_ids_list:
             choosen_question_mask = pair_text_df[
                 'question1_id'].values == choosen_id
@@ -280,23 +293,18 @@ class LDAJensenShannonFlow(FlowSpec):
                 print("An error ocurred")
                 break
             
-            threshold = 1/number_of_classes
             predictions_list = []
-            predictions_same_class_list = []
             for pair_text_index, pair_text_row in compared_df.iterrows():
+                question_1_id = pair_text_row['question1_id']
+                question_2_id = pair_text_row['question2_id']
                 row_distance = 1 - jensenshannon(
                     pair_text_row['question1'], pair_text_row['question2'])
-                same_class_prediction = row_distance > threshold
                 predictions_list.append(row_distance)
-                predictions_same_class_list.append(
-                    (same_class_prediction, pair_text_row['is_same_class']))
+
             distances_mapped[choosen_id] = predictions_list
-            predicitions_mapped[choosen_id] = predictions_same_class_list
 
         mapped_distances_df = pd.DataFrame.from_dict(
             distances_mapped, orient='index', columns=unique_ids_list)
-        mapped_predictions_df = pd.DataFrame.from_dict(
-            predicitions_mapped, orient='index', columns=unique_ids_list)
 
         # Ordering mapped distances
         first_question_id = unique_ids_list[0]
@@ -305,48 +313,117 @@ class LDAJensenShannonFlow(FlowSpec):
 
         self.mapped_distances_df = mapped_distances_df[
             mapped_distances_df.index]
-        self.mapped_predictions_df = mapped_predictions_df
+        self.next(self.evaluating_model)
+
+    @step 
+    def evaluating_model(self):
+        """
+            Evaluating the model based files classified by a lawn team
+            and also using aproximated classifications based on their
+            class
+        """
+        import pandas as pd
+
+        number_of_classes = self.number_of_classes
+        pair_text_df = self.pair_text_df
+        evaluted_pairs_df = self.evaluted_pairs_df
+
+        threshold = 1.0/number_of_classes
+        pair_text_df['predicted_is_similar'] =\
+            pair_text_df.apply(
+                lambda row: evalute_similarity(
+                    row['question1'],
+                    row['question2'],
+                    threshold), axis=1)
+        evaluted_pairs_df = evaluted_pairs_df.drop_duplicates(
+            subset=['doc_id_1', 'doc_id_2'])
+
+        pair_texts_eval_predictions_df = pd.merge(
+            pair_text_df, evaluted_pairs_df,  how='inner',
+            left_on=['question1_id', 'question2_id'],
+            right_on=['doc_id_1', 'doc_id_2'])
+
+        self.class_predictions_df = pair_text_df
+        self.similarity_predictions_df = pair_texts_eval_predictions_df
         self.next(self.scoring)
 
     @step
     def scoring(self):
         """
-            Scoring the model based files classified by a lawn team
-            and also using aproximated classifications based on their
-            class
+            Scoring the model based both on their similarity
+            and on the approximated approach using their classes
         """
-        mapped_predictions_df = self.mapped_predictions_df
-        predictions_matrix = mapped_predictions_df.to_numpy()
+        import pandas  as pd
+
+        class_predictions_df = self.class_predictions_df
+        similarity_predictions_df = self.similarity_predictions_df
 
         true_positive = 0
         true_negative = 0
         false_positive = 0
         false_negative = 0
-        count = 0
-        for i in range(1, len(predictions_matrix)):
-            for j in range(i, len(predictions_matrix)):
-                count += 1
-                similarity_prediction, true_class = predictions_matrix[i][j]
-                if similarity_prediction == true_class:
-                    if similarity_prediction:
-                        true_positive += 1
-                    else:
-                        true_negative += 1
+        for _, class_prediction_row in class_predictions_df.iterrows():
+            expected = class_prediction_row['is_same_class']
+            predicted = class_prediction_row['predicted_is_similar']
+            if predicted == expected:
+                if predicted:
+                    true_positive += 1
                 else:
-                    if similarity_prediction:
-                        false_positive += 1
-                    else:
-                        false_negative += 1
+                    true_negative += 1
+            else:
+                if predicted:
+                    false_positive += 1
+                else:
+                    false_negative += 1
 
-        self.accuracy = (true_positive + true_negative)/(
+        class_score = dict()
+        class_score['size'] = len(class_predictions_df)
+        class_score['accuracy'] = (true_positive + true_negative)/(
             true_positive + false_positive + true_negative + false_positive)
         precision = true_positive/(true_positive + false_positive)
         recall = true_positive/(true_positive + false_negative)
 
-        self.precision = precision
-        self.recall = recall
-        self.f1_score = 2*(recall * precision)/(recall+precision)
+        class_score['precision'] = precision
+        class_score['recall'] = recall
+        class_score['f1_score'] = 2*(recall * precision)/(recall+precision)
 
+        true_positive = 0
+        true_negative = 0
+        false_positive = 0
+        false_negative = 0
+        for _, class_prediction_row in similarity_predictions_df.iterrows():
+            expected = class_prediction_row['is_similar']
+            predicted = class_prediction_row['predicted_is_similar']
+            if predicted == expected:
+                if predicted:
+                    true_positive += 1
+                else:
+                    true_negative += 1
+            else:
+                if predicted:
+                    false_positive += 1
+                else:
+                    false_negative += 1
+
+        similarity_score = dict()
+        similarity_score['size'] = len(similarity_predictions_df)
+        similarity_score['accuracy'] = (true_positive + true_negative)/(
+            true_positive + false_positive + true_negative + false_positive)
+        if true_positive == 0:
+            precision = 0
+            recall = 0
+            f1_score = 0
+        else:
+            precision = true_positive/(true_positive + false_positive)
+            recall = true_positive/(true_positive + false_negative)
+            f1_score = 2*(recall * precision)/(recall+precision)
+
+        similarity_score['precision'] = precision
+        similarity_score['recall'] = recall
+        similarity_score['f1_score'] = f1_score
+
+        self.class_score = class_score
+        self.similarity_score = similarity_score
         self.next(self.end)
 
     @step
@@ -355,7 +432,8 @@ class LDAJensenShannonFlow(FlowSpec):
         End the flow.
         Output data available on
             mapped_distances_df
-            mapped_predictions_df
+            class_score
+            similarity_score
         """
         from datetime import datetime
         
