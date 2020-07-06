@@ -152,4 +152,7 @@ cython_debug/
 
 # Data related ignores
 data/*
+
+# Metaflow related ignores
+.metaflow/*
 !.gitkeep
