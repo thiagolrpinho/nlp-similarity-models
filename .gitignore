@@ -309,7 +309,7 @@ dmypy.json
 cython_debug/
 
 # Data related ignores
-data/*
+**/data/*
 
 # Metaflow related ignores
 .metaflow/*
