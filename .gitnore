@@ -150,22 +150,5 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Data related ignores
-data/*
-
-# Metaflow related ignores
-.metaflow/*
-
-__pycache__/
-*.py[cod]
-*$py.class
-*.metaflow
-
-build/
-dist/
-*.egg-info/
-
-.tox/
-
-.ipynb_checkpoints/
+# Data related Ignores
 data/
